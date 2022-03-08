@@ -1,4 +1,3 @@
-
 The client side files for this project consist of:
 
 1: index.html - the main html page for the site

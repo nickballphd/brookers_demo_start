@@ -1,7 +1,7 @@
 
 //gas project /apps/brookers/system 
 //This global variable is set to contain the information needed to make a request of the Google App Script server.
-const gas_end_point = 'https://script.google.com/macros/s/'+gas_deployment_id()+'/exec'
+const gas_end_point = 'https://script.google.com/macros/s/'+gas_deployment_id.replace(/\s/g,"")+'/exec'
 
 //This global variable defines the first two navigation items in the menu. In this app there are only two main navigation items "Home" and "Locations". These two menu items are visible regardless of login status.  
 const nav_menu=[
@@ -51,7 +51,6 @@ const authenticated_menu=[
     {label:"Employee List",function:"navigate({fn:'employee_list'})"},
     {label:"Admin Tools",id:"menu2", roles:["manager","owner","administrator"], menu:[
         {label:"Update User",function:"update_user()",panel:"update_user"},
-        {label:"Archive Inventory",function:"navigate({fn:'archive_inventory'})"},
     ]},
 
 ]
@@ -73,7 +72,7 @@ function show_home(){
     tag("canvas").innerHTML=` 
     <div class="center-screen">
     
-    <p><img height="${window.innerHeight * .6}" src="https://www.brookersicecream.com/wp-content/uploads/2018/08/brookers-logo-final-large.png"></p>
+    <p><img height="${window.innerHeight * .6}" src="/images/brookers-logo.png"></p>
     <div style="text-align:center"></div>
     
     
@@ -92,20 +91,18 @@ function get_user_name(){
 
 async function show_locations(){
     //This function demonstrates how to render a view that is created in Airtable. The list of locations is a view of the Store table in airtable. It is shared in Airtable. The ID of the share is all that is needed to display the share embedded in this webpage. Generally Airtable shared items are visible by anyone with the link or id, so any data that must be secured should not be rendered using this method. However, it is a quick and easy way to display data stored in airtable.
-    const airtable_object_id="shrwz1d1aExJUIbUo"
     const width = 400
     //here the HTML of the page is configured to display the shared view in airtable.
-    tag("canvas").innerHTML=`<div class="center-screen"><iframe class="airtable-embed" src="https://airtable.com/embed/${airtable_object_id}?backgroundColor=cyan" frameborder="0" onmousewheel="" width="${width}" height="500" style="background-color: white; border: 1px solid #ccc;"></iframe></div>`
+    tag("canvas").innerHTML=`<div class="center-screen"><iframe class="airtable-embed" src="https://airtable.com/embed/${show_locations_share}?backgroundColor=cyan" frameborder="0" onmousewheel="" width="${width}" height="500" style="background-color: white; border: 1px solid #ccc;"></iframe></div>`
     hide_menu()
 }
 
 async function request_time_off(){
     //This is an example of embedding a data form that is created in Airtable. This form allows a user to make a "time off" request. This form is not secure. Anyone with the link or the id for the form can use it to enter data into Airtable. However, it is easy to build and share an Airtable form. 
     if(!logged_in()){show_home();return}
-    const airtable_object_id="shra7pqsxDNQzkh15"
     const width = 300
     //This form is configured to accept a parameter of the user that is requesting time off. All this means is that the Airtable form, when rendered, will populate with the appropriate user. The user can still change that information and request time off for any user stored in Airtable.
-    const url=`https://airtable.com/embed/${airtable_object_id}?prefill_employee=${get_user_data().id}`
+    const url=`https://airtable.com/embed/${request_time_off_share}?prefill_employee=${get_user_data().id}`
     console.log("url",url, get_user_data())
     tag("canvas").innerHTML=`<div class="center-screen"><iframe class="airtable-embed" src="${url}" frameborder="0" onmousewheel="" width="${width}" height="500" style="background-color: white; border: 1px solid #ccc;"></iframe></div>`
     hide_menu()
@@ -114,56 +111,14 @@ async function request_time_off(){
 async function show_time_off(){
     //Another example of rendering data directly from Airtable. This function will display the time off requests for a particular employee
     if(!logged_in()){show_home();return}
-    const airtable_object_id="shroqlDqLdgd406A0"
     const width = 300
     const user_data = get_user_data()
     //notice the filter added to this URL. This filter will be applied to the table in Airtable and will only display the items defined by the filter.
-    const url=`https://airtable.com/embed/${airtable_object_id}?filter_employee=${user_data.first_name}+${user_data.last_name}`
+    const url=`https://airtable.com/embed/${show_time_off_share}?filter_employee=${user_data.first_name}+${user_data.last_name}`
     console.log("url",url, get_user_data())
     tag("canvas").innerHTML=`<div class="center-screen"><iframe class="airtable-embed" src="${url}" frameborder="0" onmousewheel="" width="${width}" height="500" style="background-color: white; border: 1px solid #ccc;"></iframe></div>`
     hide_menu()
 }
-
-
-
-
-async function archive_inventory(){
-    //This function manages the process of archiving inventory counts. Since Airtable is limited in the number of records that can be stored on a table, we added the ability to push "old" inventory count data to a permanent database stored in data.world
-    console.log("at archive")
-    //First we hide the menu and display the message to the user that this process might table a few minutes
-    hide_menu()
-    const msgbox =  message({
-            message:"This may take a couple of minutes.",
-            title:"Hang in there...",
-            kind:"info"
-        })
-    //We then invoke the "archive_inventory" function to process the archival of the old inventory counts. 
-    //Note: the post_data function is a generic function used to push data to Google App Script which will handle the process of posting data securely (which cannot be done solely on the client side all client side code is exposed in the browser). To use this function:
-    //1- create an object (in this case params) that contains the information needed process the post. In this case, we just need to run the archive_inventory function. Notice how the function called is set in the "mode" property of the object
-    //2- create a variable to receive the results of calling the post_data function (which sends the request to google app script to actually post the data) 
-    const params={mode:"archive_inventory"}
-    const response=await post_data(params)
-    //once the post is processed the initial message to the user that the process is running is removed and a new message is displayed to the user indicating the result of the post
-    msgbox.remove()
-    if(response.status==="success"){
-        //a call to the message function displays a message to the user. Notice the properties of the messsage object passed including the ability to have the message disappear after a specified number of seconds.
-        message({
-            message:response.message,
-            title:"Success",
-            seconds:3
-        })
-    }else{
-        message({
-            message:response.message,
-            title:"Data Error",
-            kind:"error",
-            seconds:8    
-        })
-
-    }
-    
-}
-
 
 async function ice_cream_inventory(params){
     //this function is used both the record inventory counts and to build a summary report. The "style" property of the params sent to the function determines whether the function is in "count" mode or "summary" mode. Also, if the user has access to multiple stores, they will be presented with the option to select the store they wish to work with.
@@ -213,7 +168,7 @@ async function ice_cream_inventory(params){
             //If the user wants to record an inventory count, we build a form to have the user select the store they wish to work with.
             const html=['<form>Store: <select name="store">']
             for(store of user_data.store){
-                html.push(`<option value="${store}">${stores[store]}</option>`)
+                html.push(`<option value="${store}">${store_list()[store]}</option>`)
             }
             //When the user selects the store using the form, the "get_inventory_list" function is invoked on the submission of the form to populate the rest of this page with the data for that store
             html.push(`</select>
@@ -251,10 +206,12 @@ async function ice_cream_inventory(params){
                     <tr>
                     <th class="sticky">Flavor</th>
                     `]
-                for(const store of store_sequence){
-                    header.push(`<th class="sticky">${store}</th>`)
 
-                }   
+                for(const [key,val] of Object.entries(store_list())){
+                    if(key.indexOf("rec")===0){
+                        header.push(`<th class="sticky">${val}</th>`)
+                    }
+                }
 
                 header.push(`<th class="sticky">Total</th>`)
                 header.push("</tr>")
@@ -273,9 +230,13 @@ async function ice_cream_inventory(params){
                     //insert the flavor name (record.field.name)
                     target.push(`<td style="text-align:left">${record.fields.name}</td>`)
                     //create empty cells in the table for the inventory counts. Notice that the ID for the empty cell is set to be a combination of the id for the flavor (record.id) and the store (stores[store]) corresponding to the column. This way the table can be populated with the correct data in the correct cells.
-                    for(store of store_sequence){
-                        target.push(`<td id="${record.id}|${stores[store]}"></td>`)
+
+                    for(const [key,val] of Object.entries(store_list())){
+                        if(key.indexOf("rec")===0){
+                            target.push(`<td id="${record.id}|${key}"></td>`)
+                        }
                     }
+
                     //The totals will be calculated. The id is set to a combination of the flavor id and "total" so that the appropriate totals can be placed correctly in the table. 
                     target.push(`<td id="${record.id}|total"></td>`)
                     target.push("</tr>")
@@ -331,7 +292,7 @@ async function ice_cream_inventory(params){
                 window.cols={}
                 console.log("response", response)
                 // build the HTML header for the page identifying the store for which the counts will be recorded
-                tag("inventory-title").innerHTML=`<h2>${stores[params.store]} Ice Cream Inventory</h2>`
+                tag("inventory-title").innerHTML=`<h2>${store_list()[params.store]} Ice Cream Inventory</h2>`
                 const html=["Fill in every row in this section."]
                 //build the table for the form used to record the counts.
                 const header=[`
@@ -346,9 +307,6 @@ async function ice_cream_inventory(params){
                     window.cols[p]=container
                     window.cols[container]=p++
                     let cont=container
-                    if(cont==="Walk-in Freezers" && stores[params.store]==="Vineyard"){
-                        cont=cont + " &amp;<br>Hardening Cabinets"
-                    }
                     console.log("container",container)
                     header.push(`<th onclick="hide_elements('col-${window.cols[container]}')" class="sticky col-${window.cols[container]}" >${cont}</th>`)
                 }     
@@ -445,32 +403,6 @@ async function ice_cream_inventory(params){
     }  
 }
 
-function hide_elements(className){// adds the hidden class to all elements of the given class name
-    if(Array.isArray(className)){
-        var classes=className
-    }else{
-        var classes=[className]
-    }
-
-    for(const one_class of classes){
-        for(const elem of document.getElementsByClassName(one_class)){
-            elem.classList.add("hidden")
-        }
-    }
-}
-function show_elements(className){// remvoes the hidden class to all elements of the given class name
-    if(Array.isArray(className)){
-        var classes=className
-    }else{
-        var classes=[className]
-    }
-    
-    for(const one_class of classes){
-        for(const elem of document.getElementsByClassName(one_class)){
-            elem.classList.remove("hidden")
-        }
-    }
-}
 
 function add_buttons(row,col){
     //this function is used to create the input buttons for recording the inventory observations. Notice that we only use the options for case 3. We might use the other options in the future.
@@ -531,17 +463,6 @@ function get_div_button(box,width,value,label){
     return div
 }
 
-function getAllSiblings(elem, filter) {
-    //used to help with the creation of the input buttons to group options for each flavor.
-    var sibs = [];
-    elem = elem.parentNode.firstChild;
-    do {
-        //if (elem.nodeType === 3) continue; // text node
-        //if (!filter || filter(elem))
-        sibs.push(elem);
-    } while (elem = elem.nextSibling)
-    return sibs;
-}
 
 function move_down(source){
     // aids in navigation. selects the next cell below when a value is updated
@@ -575,6 +496,12 @@ function flavor_total(flavor_id){
 async function update_observation(entry){
     //this is the function that is called to update an observation when the value is change in the input form.
     //console.log(entry.parentElement)
+
+    if(entry.parentElement.classList.contains("working")){
+        // don't allow a cell currently posing to be edited.
+        return
+    }
+
     if(!logged_in()){show_home();return}//If the user logs out, not updates are permitted.
     // add data validation. If a values that is not a number has been entered, the cell is highlighted in gray and an error message is presented to the user. No update will be made.
     if(isNaN(entry.value)){
