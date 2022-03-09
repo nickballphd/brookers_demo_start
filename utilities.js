@@ -52,11 +52,11 @@ function json_params_for_url(params){ // encode an object without the trailing e
 }
 
 async function submit_form(form){//this function is not used, but could be used to submit form data to google app script to update Airtable.
-    return await post_data(form_data(form))
+    return await server_request(form_data(form))
 }
 
 function form_data(html_tag,spin){
-    // read the informatoin from a form and put it into an object, ready to be sent to post_data
+    // read the informatoin from a form and put it into an object, ready to be sent to server_request
     const payload={}// the object to return with the form's values
     // if the html_tag sent it is a button, and spin is true, change the button's text to a spinner
     if(html_tag.tagName==="BUTTON"){

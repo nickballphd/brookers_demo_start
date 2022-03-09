@@ -1,31 +1,48 @@
 let current_menu=[]
 const base=window.location.protocol + "//" + window.location.host + "/"
 
-async function post_data(payload){
+async function server_request(payload, callback){
     //This function is used to invoke a function in Google App Script to interact with Airtable. This is desireable so that we can isolate the information needed to interact with the data from the client browser.
-    working()//This function is used to present a visual cue to the user that the site is performing an update.
+    //if a callback is not provided  this function waits until the call is complete
+
     if(document.cookie){//cookies are used to manage authenticated user information. The cookies are sent to Google App Script to ensure that users have appropriate authication and credentials update the database.
       payload.cookie=document.cookie
     }
     console.log("const payload=`" + JSON.stringify(payload) + "`")//This is primarily useful for troubleshooting. The data passed to Google App Script is sent to the console.
     //The request for Google App Script is formatted.
-    const reply = await fetch(gas_end_point, { 
+    const options = { 
         method: "POST", 
         body: JSON.stringify(payload),
-    })
-    //The request is made of Google App Script and the response is set to "response"
-    const response = await reply.json()
-    working(false)
-    console.log("in post data", response)     
-
-    if(response.cookie){// if respoonse has a cookie, set it
-        for(const entry of response.cookie){
-            console.log("cookie returned",entry.name,"=",entry.data)
-            set_cookie(entry.name,entry.data,response.cookie_days)
-        }
     }
-    //the response from google app script is returned.
-    return response
+
+    if(callback){// execute the requst and let callback handle the response
+        fetch(gas_end_point, options)
+        .then(response => response.json())
+        .then(callback);
+    }else{ //execute the request and wait for the response so it can be returned
+        working()//This function is used to present a visual cue to the user that the site is performing an update.
+        const reply = await fetch(gas_end_point, options)
+        //The request is made of Google App Script and the response is set to "response"
+        const response = await reply.json()
+        working(false)
+
+        if(response.error){
+            // we trapped an error in the google apps script
+            console.error("Error in Google Apps Script")
+            throw response.error
+
+        }
+        console.log("in post data", response)     
+
+        if(response.cookie){// if respoonse has a cookie, set it
+            for(const entry of response.cookie){
+                console.log("cookie returned",entry.name,"=",entry.data)
+                set_cookie(entry.name,entry.data,response.cookie_days)
+            }
+        }
+        //the response from google app script is returned.
+        return response
+    }
 }
 
 async function initialize_app(){
@@ -272,7 +289,7 @@ async function login(params){
         }
 
 
-        const response = await post_data(params)
+        const response = await server_request(params)
         if(response.status==="success"){
             build_menu(authenticated_menu)
             //show_menu(authenticated_menu)
@@ -314,7 +331,7 @@ async function personal_data(params){
         `
         const panel=tag("personal_data_panel")
       
-        response = await post_data({  // getting the member data
+        response = await server_request({  // getting the member data
             mode:"get_user_data"
         })
 
@@ -352,7 +369,7 @@ async function personal_data(params){
         
     }else if(params.button){
         if(params.button==='Update'){
-            response = await post_data(params)
+            response = await server_request(params)
             tag("submit_button").innerHTML="Update"
 
             if(response.status==="success"){
@@ -391,7 +408,7 @@ async function create_account(params){
         create_account({action:"show-form"})
     }else if(params.button){
         if(params.button==='Create Account'){
-            response = await post_data(params)
+            response = await server_request(params)
             console.log("response in submit_account", response)
             tag("create-account-message").innerHTML="Check your email for a code and enter it here."
             if(response.status==="success"){
@@ -413,7 +430,7 @@ async function create_account(params){
             tag("create_account_button").innerHTML="Create Account"    
             }
         }else if (params.button==='Verify Account'){
-            response = await post_data(params)
+            response = await server_request(params)
             if(response.status==="success"){
                 message({
                     title:"Account Verified",
@@ -479,7 +496,7 @@ async function create_account(params){
 async function confirm_account(params){
     // called by the link emailed to the user
     
-    response = await post_data({
+    response = await server_request({
         mode:"verify_account",
         email:params.email,
         code:params.code
@@ -536,7 +553,7 @@ async function change_password(params){
             return
         }
 
-        response = await post_data(params)
+        response = await server_request(params)
         tag("pw_button").innerHTML="Change Password"
         if(response.status==="success"){
             message({
@@ -596,7 +613,7 @@ async function update_user(params,panel){
         }
 
 
-        response = await post_data(params)
+        response = await server_request(params)
         if(tag("update_user_button")){
             tag("update_user_button").innerHTML="Update User"
         }
@@ -654,7 +671,7 @@ async function recover_password(params){
     }else if(params.code ){
         //user is submitting  a code and a new password
         
-        response = await post_data(params)        
+        response = await server_request(params)        
         if(panel){
             panel.innerHTML=''
             panel.style.display="none" 
@@ -679,7 +696,7 @@ async function recover_password(params){
 
     }else if(params.mode==="initiate_password_reset"){
         // user is  initiating a request
-        response = await post_data(params)
+        response = await server_request(params)
         
         if(response.status==="success"){
             message({

@@ -183,8 +183,9 @@ async function ice_cream_inventory(params){
     }else if(params.store){    
         //Notice that the first time through the store property is undefined and is set when the user data is loaded. Therefore this code will only process the second time through once the store property is set. During this pass, we determine whether to display the report of the last recorded inventory or display the form for recording a new inventory count.
         console.log("at ice_cream_inventory params=store")
-        //we use a call to the "post_data" function to use Google App Script to retrieve the data needed to processs the form or the report
-        const response=await post_data(params)
+        //we use a call to the "server_request" function to use Google App Script to retrieve the data needed to processs the form or the report
+        
+        const response=await server_request(params)
         tag("inventory-message").innerHTML=''
 
 
@@ -535,8 +536,8 @@ async function update_observation(entry){
         params.mode="update_inventory_count"
         params.obs_id=entry.dataset.obs_id
         console.log("updating", params.obs_id)
-        //use the post_data function to update the value (the update_inventory_count function in google app script is called and the appropriate flavor, store, container, and quantity information is passed)
-        const response=await post_data(params)    
+        //use the server_request function to update the value (the update_inventory_count function in google app script is called and the appropriate flavor, store, container, and quantity information is passed)
+        const response=await server_request(params)    
         console.log("update response", response)
         
         if(response.status==="success"){//if the value is successfully updated, the appearance of the cell is changed to reflect the update.
@@ -562,7 +563,7 @@ async function update_observation(entry){
         // there is no record for this item, insert it using the "insert_inventory_count" function in google app script
         params.mode="insert_inventory_count"
         console.log("inserting")
-        const response=await post_data(params)    
+        const response=await server_request(params)    
         console.log("insert response", response)
         
         if(response.status==="success"){//If it is inserted correctly, the appearance of the cell is changed to reflect the update.
@@ -604,8 +605,8 @@ async function employee_list(){
     </div>
     `
     
-    //retrieve the employee data using the local post_data function to request the Google App Script function "employee_list" retrieve the employee data.
-    const response=await post_data({
+    //retrieve the employee data using the local server_request function to request the Google App Script function "employee_list" retrieve the employee data.
+    const response=await server_request({
         mode:"employee_list",
         filter:""
     })
