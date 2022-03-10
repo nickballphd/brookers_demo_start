@@ -467,10 +467,20 @@ async function create_account(params){
                 <option value="" selected></option>
                 `]
 
-                for(const [key,val] of Object.entries(store_list())){
-                    if(key.indexOf("rec")===0){
-                        html.push(`<option value="${key}">${val}</option>`)
-                    }
+                params = {mode:'get_store_list'}
+                response = await server_request(params)
+                if(response.status!=="success"){
+                    message({
+                        title:"Error",
+                        message:"Unable to get store list.",
+                        kind:"error",
+                        seconds:8
+                    })
+                }                
+    
+
+                for(const [key,val] of Object.entries(response.store_list)){
+                        html.push(`<option value="${val}">${key}</option>`)
                 }
             html.push(`</select><br><br>
                     Other employees can see ...<br>
