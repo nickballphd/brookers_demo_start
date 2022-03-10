@@ -45,9 +45,10 @@ const authenticated_menu=[
     //This menu item allows the user to add additional users. Note the "roles" property of the object. Only users with the role of "manager", "owner", or "administrator" will see this menu item. User roles are not heirachical. All user types you wish to see a menu item must be listed in the elements of the array.
     {label:"Add Employee",function:"navigate({fn:'create_account'})", roles:["manager","owner","administrator"]}, 
     //This menu item adds the menu item for updating an inventory count. Notice how a parameter is passed to the "ice_cream_inventory" function
-    {label:"Enter Ice Cream Inventory",home:"Inventory",function:"navigate({fn:'ice_cream_inventory',params:{style:'update'}})"},
+    {label:"Enter Ice Cream Inventory",home:"Inventory",function:"navigate({fn:'record_inventory'})"},
     //the remaining menu items are added
-    {label:"Ice Cream Inventory Summary",home:"Inventory",function:"navigate({fn:'ice_cream_inventory',params:{style:'summary'}})", roles:["owner","administrator"]},
+    {label:"Ice Cream Inventory Summary",home:"Inventory",function:"navigate({fn:'show_inventory_summary'})", roles:["owner","administrator"]},
+
     {label:"Employee List",function:"navigate({fn:'employee_list'})"},
     {label:"Admin Tools",id:"menu2", roles:["manager","owner","administrator"], menu:[
         {label:"Update User",function:"update_user()",panel:"update_user"},
@@ -120,17 +121,16 @@ async function show_time_off(){
     hide_menu()
 }
 
-async function ice_cream_inventory(params){
-    //this function is used both the record inventory counts and to build a summary report. The "style" property of the params sent to the function determines whether the function is in "count" mode or "summary" mode. Also, if the user has access to multiple stores, they will be presented with the option to select the store they wish to work with.
+async function record_inventory(params){
+    console.log('in record_inventory')
 
     if(!logged_in()){show_home();return}//in case followed a link after logging out. This prevents the user from using this feature when they are not authenticated.
 
     //First we hide the menu
     hide_menu()
-    console.log('at ice_cream_inventory.  params:',params)
 
     //This function is set up recursively to build the page for working with inventory. The first time the function is called, the HTML shell is created for displaying either the inventory form for recording the count or the inventory report. Note that this will only be built if there is a "style" property set when the function is called. Once the shell is created, the function is called again to either built the form for recording an inventory count or create the summary report.
-    if(params.style){
+    if(!params){
         //building the HTML shell
         tag("canvas").innerHTML=` 
             <div class="page">
@@ -148,39 +148,27 @@ async function ice_cream_inventory(params){
             //If the user is associated with exactly 1 store, we call the get_inventory_list function again to populate the rest of the page with the data for that store. 
             tag("inventory-message").innerHTML='<i class="fas fa-spinner fa-pulse"></i>'//this element is used to add a visual element (spinning wheel) to signify that the site is processing.
             //we call the get_inventory_list function (mode) filtered to show only "Ice Cream" (filter) - note that there are other inventory items - in the store associated with this user (store).
-            ice_cream_inventory({
-                mode:"get_inventory_list",
+            record_inventory({
+                mode:"get_inventory_data",
                 filter:"list='Ice Cream'",
                 store:user_data.store[0]
             })
         }else{
-            //We get here if the user is associated with more than 1 store. 
-          if(params.style==='summary'){
-              //If the user wants to see a summary of the most recent count, we call the "get_inventory_list" function to populate the page with data from all of the stores that are associated with that user.
-            tag("inventory-message").innerHTML='<i class="fas fa-spinner fa-pulse"></i>'
-            ice_cream_inventory({
-                mode:"get_inventory_list",
-                filter:"list='Ice Cream'",
-                store:user_data.store,
-            })
-
-          }else{
-            //If the user wants to record an inventory count, we build a form to have the user select the store they wish to work with.
+            //We get here if the user is associated with more than 1 store. We build a form to have the user select the store they wish to work with.
             const html=['<form>Store: <select name="store">']
             for(store of user_data.store){
                 html.push(`<option value="${store}">${store_list()[store]}</option>`)
             }
             //When the user selects the store using the form, the "get_inventory_list" function is invoked on the submission of the form to populate the rest of this page with the data for that store
             html.push(`</select>
-                        <button type="button" id="choose_store_button" onclick="ice_cream_inventory(form_data(this,true))">Submit</button>
-                        <input type="hidden" name="mode" value="get_inventory_list">
+                        <button type="button" id="choose_store_button" onclick="record_inventory(form_data(this,true))">Submit</button>
+                        <input type="hidden" name="mode" value="get_inventory_data">
                         <input type="hidden" name="filter" value="list='Ice Cream'">
                         </form>`)
             tag("inventory_panel").innerHTML=html.join("")
-          }
         }
 
-    }else if(params.store){    
+    }else{    
         //Notice that the first time through the store property is undefined and is set when the user data is loaded. Therefore this code will only process the second time through once the store property is set. During this pass, we determine whether to display the report of the last recorded inventory or display the form for recording a new inventory count.
         console.log("at ice_cream_inventory params=store")
         //we use a call to the "server_request" function to use Google App Script to retrieve the data needed to processs the form or the report
@@ -193,215 +181,249 @@ async function ice_cream_inventory(params){
 
         if(response.status==="success"){//If the data is retrieved successfully, we proceed.
             
-            if(response.report_style==='summary'){
-            //If the style property is set to "summary", we build the report of the most recent count.
-
-                console.log("response", response)
-                //build the HMTL heading for the report
-                tag("inventory-title").innerHTML=`<h2>Ice Cream Inventory Summary</h2>`
-
-
-                //Build the table to display the report. The columns of the table are: Flavor, the stores available to the user, and the total inventory. Since only the owner is given the option to view inventory counts (see the autheticated_user global variable), all stores will be shown in the report.
-                const header=[`
-                <table class="inventory-table">
-                    <tr>
-                    <th class="sticky">Flavor</th>
-                    `]
-
-                for(const [key,val] of Object.entries(store_list())){
-                    if(key.indexOf("rec")===0){
-                        header.push(`<th class="sticky">${val}</th>`)
-                    }
-                }
-
-                header.push(`<th class="sticky">Total</th>`)
-                header.push("</tr>")
-                const html=[header.join("")]
-
-                irregular=[]// used for icecream that is not in regular category
-
-                //processing the data to fit in the table
-                for(record of response.list.records){
-                    let target=html
-                    if(record.fields.category!=="Regular"){
-                        target=irregular
-                    }
-                    //add a new table row to the table for each flavor
-                    target.push("<tr>")
-                    //insert the flavor name (record.field.name)
-                    target.push(`<td style="text-align:left">${record.fields.name}</td>`)
-                    //create empty cells in the table for the inventory counts. Notice that the ID for the empty cell is set to be a combination of the id for the flavor (record.id) and the store (stores[store]) corresponding to the column. This way the table can be populated with the correct data in the correct cells.
-
-                    for(const [key,val] of Object.entries(store_list())){
-                        if(key.indexOf("rec")===0){
-                            target.push(`<td id="${record.id}|${key}"></td>`)
-                        }
-                    }
-
-                    //The totals will be calculated. The id is set to a combination of the flavor id and "total" so that the appropriate totals can be placed correctly in the table. 
-                    target.push(`<td id="${record.id}|total"></td>`)
-                    target.push("</tr>")
-                }     
-
-                //this adds a table for the "irregular" items that might be counted.
-                html.push("</table><br>")
-                html.push(header.join(""))
-                html.push(irregular.join(""))
-                html.push("</table>")
-                tag("inventory_panel").innerHTML=html.join("")
-
-
-                // find the most recent numbers for each store
-                const data={}
-                //if there is data to display, proceed
-                if(response.data.records){
-                    //process through each available data item
-                    for(record of response.data.records){
-                        //identity the flavor/store combination for each observation
-                        const id = record.fields.item[0] + "|" + record.fields.store[0]
-                        //Since the data is ordered by date, if we have already found an observation for a flavor/store combination, any additional obeservations are skipped.
-                        if(!data[id]){
-                            data[id]={quantity:record.fields.quantity,date:record.fields.date}
-                        }
-                    }
-    
-                    // now fill the table with the most recent observations found for each flavor/store combination
-                    for(const[key,value] of Object.entries(data)){
-                        //create "boxes" for the store observations and totals of each flavor based on the identifiers already created for the individual cells (id's of the <td> tags)
-                        const total_box = tag(key.split("|")[0] + "|total")
-                        const box = tag(key)
-                        //There will be more than one current observation for a flavor in each store, so we need to total these observations by store. To do this, if there is not currently a value in the table for flavor/store, it is added. If there is an observation, the new observation is added to the one that is currently there (running total logic).
-                        if(box.innerHTML===""){
-                            box.innerHTML=value.quantity
-                        }else{
-                            box.innerHTML=parseFloat(box.innerHTML)+value.quantity
-                        }
-                        //similar logic is used to build running totals for the grand total column.
-                        if(total_box.innerHTML===""){
-                            total_box.innerHTML=value.quantity
-                        }else{
-                            total_box.innerHTML=parseFloat(total_box.innerHTML)+value.quantity
-                        }
-  
-                    }
-                }
-                
-            }else{
             //this is generating the form for updating inventory counts in an individual store
-                // keep track of navigation
-                window.rows={}
-                window.cols={}
-                console.log("response", response)
-                // build the HTML header for the page identifying the store for which the counts will be recorded
-                tag("inventory-title").innerHTML=`<h2>${store_list()[params.store]} Ice Cream Inventory</h2>`
-                const html=["Fill in every row in this section."]
-                //build the table for the form used to record the counts.
-                const header=[`
-                <table class="inventory-table">
-                    <tr>
-                    <th class="sticky" onclick="show_elements(['col-1','col-2','col-3'])">Flavor</th>
-                    `]
-                let p=1 // map store ids to column numbers.  only needed for this loop then can be reused
-                
-                //add table headers for the "containers" (freezers) where inventory will be counted. Note that only the "Vineyard" location has a "Hardening Cabinet"
-                for(container of response.list.records[0].fields.container){
-                    window.cols[p]=container
-                    window.cols[container]=p++
-                    let cont=container
-                    console.log("container",container)
-                    header.push(`<th onclick="hide_elements('col-${window.cols[container]}')" class="sticky col-${window.cols[container]}" >${cont}</th>`)
-                }     
-                header.push('<th class="sticky">Total</th></tr>')
-                html.push(header.join(""))
-                irregular=[]// ice cream not in regular category
+            // keep track of navigation
+            window.rows={}
+            window.cols={}
+            console.log("response", response)
+            // build the HTML header for the page identifying the store for which the counts will be recorded
+            tag("inventory-title").innerHTML=`<h2>${store_list()[params.store]} Ice Cream Inventory</h2>`
+            const html=["Fill in every row in this section."]
+            //build the table for the form used to record the counts.
+            const header=[`
+            <table class="inventory-table">
+                <tr>
+                <th class="sticky" onclick="show_elements(['col-1','col-2','col-3'])">Flavor</th>
+                `]
+            let p=1 // map store ids to column numbers.  only needed for this loop then can be reused
+            
+            //add table headers for the "containers" (freezers) where inventory will be counted. Note that only the "Vineyard" location has a "Hardening Cabinet"
+            for(container of response.list.records[0].fields.container){
+                window.cols[p]=container
+                window.cols[container]=p++
+                let cont=container
+                console.log("container",container)
+                header.push(`<th onclick="hide_elements('col-${window.cols[container]}')" class="sticky col-${window.cols[container]}" >${cont}</th>`)
+            }     
+            header.push('<th class="sticky">Total</th></tr>')
+            html.push(header.join(""))
+            irregular=[]// ice cream not in regular category
 
-                p=1// for keeping track of navigating rows.  can be reused after this loop
-                for(record of response.list.records){
-                    // object to allow the navigation from row to row
-                    window.rows[p]=record.id
-                    window.rows[record.id]=p++
+            p=1// for keeping track of navigating rows.  can be reused after this loop
+            for(record of response.list.records){
+                // object to allow the navigation from row to row
+                window.rows[p]=record.id
+                window.rows[record.id]=p++
 
-                    //build the rest of the table for all of the regular ice cream items
-                    let target=html
-                    if(record.fields.category!=="Regular"){
-                        target=irregular
-                    }
-                    //add a row for each flavor (record.field.name)
-                    target.push("<tr>")
-                    target.push(`<th>${record.fields.name}</th>`)
-                    //build a text input in each cell. Use the combination of the flavor and container ids as the identifier of the input so that we can use it to update the correct record. When a value in the input is change (onchange), the update_observation function is called and passed the value and information needed (store, flavor, and container) to add the observation to the database. update_observation is a function in Amazon App Script.
-                    for(container of record.fields.container){
-                        target.push(`<td class="active col-${window.cols[container]}"><input id="${record.id}|${container.replace(/\s/g,"_")}" data-store="${params.store}" data-item_id="${record.id}" data-container="${container}" type="text" onchange="update_observation(this)"></td>`)
-                    }     
-                    target.push(`<td  class="inactive" id="${record.id}|total"></td></tr>`)//This sets the background color for items that have been updated to provide a visual cue that the element has been updated.
-                }     
-                html.push("</table>")
-                //add form to collect observations for the irregular items
-                html.push("<br>In this section, fill in only the rows corresponding to flavors you have on hand.")
-                html.push(header.join(""))
-                html.push(irregular.join(""))
-                html.push("</table>")
-                tag("inventory_panel").innerHTML=html.join("")
-
-                // add quick buttons. The dipping cabinet locations can only have values of 0, 1/4, 1/2, 3/4, and 1. This will add buttons for inputs in the dipping cabinets.
-                for(const [key,row] of Object.entries(window.rows)){
-                    if(isNaN(row)){
-                        add_buttons(row,"Dipping Cabinet")
-                    }
+                //build the rest of the table for all of the regular ice cream items
+                let target=html
+                if(record.fields.category!=="Regular"){
+                    target=irregular
                 }
+                //add a row for each flavor (record.field.name)
+                target.push("<tr>")
+                target.push(`<th>${record.fields.name}</th>`)
+                //build a text input in each cell. Use the combination of the flavor and container ids as the identifier of the input so that we can use it to update the correct record. When a value in the input is change (onchange), the update_observation function is called and passed the value and information needed (store, flavor, and container) to add the observation to the database. update_observation is a function in Amazon App Script.
+                for(container of record.fields.container){
+                    target.push(`<td class="active col-${window.cols[container]}"><input id="${record.id}|${container.replace(/\s/g,"_")}" data-store="${params.store}" data-item_id="${record.id}" data-container="${container}" type="text" onchange="update_observation(this)"></td>`)
+                }     
+                target.push(`<td  class="inactive" id="${record.id}|total"></td></tr>`)//This sets the background color for items that have been updated to provide a visual cue that the element has been updated.
+            }     
+            html.push("</table>")
+            //add form to collect observations for the irregular items
+            html.push("<br>In this section, fill in only the rows corresponding to flavors you have on hand.")
+            html.push(header.join(""))
+            html.push(irregular.join(""))
+            html.push("</table>")
+            tag("inventory_panel").innerHTML=html.join("")
 
-                const val_map={
-                    "0":0  ,
-                    "1":1  ,
-                    "2":2  ,
-                    "3":3  ,
-                    "4":4  ,
-                    "¼":.25,
-                    "½":.5 ,
-                    "¾":.75
+            // add quick buttons. The dipping cabinet locations can only have values of 0, 1/4, 1/2, 3/4, and 1. This will add buttons for inputs in the dipping cabinets.
+            for(const [key,row] of Object.entries(window.rows)){
+                if(isNaN(row)){
+                    add_buttons(row,"Dipping Cabinet")
                 }
+            }
 
-                // To the extent that observations may already exist for a flavor in that location in that store, they will be populated on the table. Changes to these values will also be updated.
-                if(response.data.records){
-                    for(record of response.data.records){
-                        const box=tag(record.fields.item[0] + "|" + record.fields.container.replace(/\s/g,"_"))
-                        box.dataset.obs_id=record.id
-                        box.value=record.fields.quantity
-                        for(const div of getAllSiblings(box)){
-                           // console.log(div.tagName,div.innerHTML,record.fields.quantity,val_map[div.innerHTML],record.fields.quantity===val_map[div.innerHTML])
-                            if(div.tagName==="DIV" && record.fields.quantity===val_map[div.innerHTML]){
-                                div.style.backgroundColor="lightGrey"
-                                div.style.color="black"
-                            }
+            const val_map={
+                "0":0  ,
+                "1":1  ,
+                "2":2  ,
+                "3":3  ,
+                "4":4  ,
+                "¼":.25,
+                "½":.5 ,
+                "¾":.75
+            }
+
+            // To the extent that observations may already exist for a flavor in that location in that store, they will be populated on the table. Changes to these values will also be updated.
+            if(response.data.records){
+                for(record of response.data.records){
+                    const box=tag(record.fields.item[0] + "|" + record.fields.container.replace(/\s/g,"_"))
+                    box.dataset.obs_id=record.id
+                    box.value=record.fields.quantity
+                    for(const div of getAllSiblings(box)){
+                        // console.log(div.tagName,div.innerHTML,record.fields.quantity,val_map[div.innerHTML],record.fields.quantity===val_map[div.innerHTML])
+                        if(div.tagName==="DIV" && record.fields.quantity===val_map[div.innerHTML]){
+                            div.style.backgroundColor="lightGrey"
+                            div.style.color="black"
                         }
-                        box.parentElement.classList.add("inactive")
-                        box.parentElement.classList.remove("active")
                     }
+                    box.parentElement.classList.add("inactive")
+                    box.parentElement.classList.remove("active")
                 }
+            }
 
-                // now that the data have been entered, total the rows. This will be updated every time a value is updated in the database.
-                for(const [key,row] of Object.entries(window.rows)){
-                    if(isNaN(row)){
-                        //console.log(row)
-                        tag(row + "|total").innerHTML = flavor_total(row)
-                    }
+            // now that the data have been entered, total the rows. This will be updated every time a value is updated in the database.
+            for(const [key,row] of Object.entries(window.rows)){
+                if(isNaN(row)){
+                    //console.log(row)
+                    tag(row + "|total").innerHTML = flavor_total(row)
                 }
+            }
 
-                tag("inventory_panel").addEventListener("keyup", function(event) {
-                    if (event.keyCode === 13) {
-                      move_down(event.target);
-                    }
-                });                
-
-
-                
-
-                
-            } 
-        }else{//This executes if the data needed to create the form or report is not retrieved successfully. It is essentially an error message to the user.
+            tag("inventory_panel").addEventListener("keyup", function(event) {
+                if (event.keyCode === 13) {
+                    move_down(event.target);
+                }
+            });                
+        }else{
+            //This executes if the data needed to create the form or report is not retrieved successfully. It is essentially an error message to the user.
             tag("inventory_panel").innerHTML="Unable to get inventory list: " + response.message + "."
         }
-    }  
+    }
+}
+
+async function show_inventory_summary(params){
+    console.log('in show_inventory_summary')
+    //this function is used both the record inventory counts and to build a summary report. The "style" property of the params sent to the function determines whether the function is in "count" mode or "summary" mode. Also, if the user has access to multiple stores, they will be presented with the option to select the store they wish to work with.
+
+    if(!logged_in()){show_home();return}//in case followed a link after logging out. This prevents the user from using this feature when they are not authenticated.
+
+    //First we hide the menu
+    hide_menu()
+    //This function is set up recursively to build the page for working with inventory. The first time the function is called, the HTML shell is created for displaying either the inventory form for recording the count or the inventory report. Note that this will only be built if there is a "style" property set when the function is called. Once the shell is created, the function is called again to either built the form for recording an inventory count or create the summary report.
+    //building the HTML shell
+    tag("canvas").innerHTML=` 
+        <div class="page">
+            <div id="inventory-title" style="text-align:center"><h2>Ice Cream Inventory</h2></div>
+            <div id="inventory-message" style="width:100%"></div>
+            <div id="inventory_panel"  style="width:100%">
+            </div>
+        </div>  
+    `
+    //loading user data. Any user can record an inventory count, so we don't need to check their role at this point. If a user is associated with more than one store and they wish to record an inventory count, they will be prompted to select the store they want to work with.
+
+    const user_data = get_user_data()
+    console.log ("user_data",user_data)
+    //If the user wants to see a summary of the most recent count, we call the "get_inventory_summary" function to populate the page with data from all of the stores that are associated with that user.
+    tag("inventory-message").innerHTML='<i class="fas fa-spinner fa-pulse"></i>'
+    
+    const response=await server_request({
+        mode:"get_inventory_summary",
+        filter:"list='Ice Cream'",
+        store:user_data.store,
+    })
+    tag("inventory-message").innerHTML=''
+
+    if(response.status==="success"){//If the data is retrieved successfully, we proceed.
+    
+        //If the style property is set to "summary", we build the report of the most recent count.
+
+        console.log("response", response)
+        //build the HMTL heading for the report
+        tag("inventory-title").innerHTML=`<h2>Ice Cream Inventory Summary</h2>`
+
+
+        //Build the table to display the report. The columns of the table are: Flavor, the stores available to the user, and the total inventory. Since only the owner is given the option to view inventory counts (see the autheticated_user global variable), all stores will be shown in the report.
+        const header=[`
+        <table class="inventory-table">
+            <tr>
+            <th class="sticky">Flavor</th>
+            `]
+
+        for(const [key,val] of Object.entries(store_list())){
+            if(key.indexOf("rec")===0){
+                header.push(`<th class="sticky">${val}</th>`)
+            }
+        }
+
+        header.push(`<th class="sticky">Total</th>`)
+        header.push("</tr>")
+        const html=[header.join("")]
+
+        irregular=[]// used for icecream that is not in regular category
+
+        //processing the data to fit in the table
+        for(record of response.list.records){
+            let target=html
+            if(record.fields.category!=="Regular"){
+                target=irregular
+            }
+            //add a new table row to the table for each flavor
+            target.push("<tr>")
+            //insert the flavor name (record.field.name)
+            target.push(`<td style="text-align:left">${record.fields.name}</td>`)
+            //create empty cells in the table for the inventory counts. Notice that the ID for the empty cell is set to be a combination of the id for the flavor (record.id) and the store (stores[store]) corresponding to the column. This way the table can be populated with the correct data in the correct cells.
+
+            for(const [key,val] of Object.entries(store_list())){
+                if(key.indexOf("rec")===0){
+                    target.push(`<td id="${record.id}|${key}"></td>`)
+                }
+            }
+
+            //The totals will be calculated. The id is set to a combination of the flavor id and "total" so that the appropriate totals can be placed correctly in the table. 
+            target.push(`<td id="${record.id}|total"></td>`)
+            target.push("</tr>")
+        }     
+
+        //this adds a table for the "irregular" items that might be counted.
+        html.push("</table><br>")
+        html.push(header.join(""))
+        html.push(irregular.join(""))
+        html.push("</table>")
+        tag("inventory_panel").innerHTML=html.join("")
+
+
+        // find the most recent numbers for each store
+        const data={}
+        //if there is data to display, proceed
+        if(response.data.records){
+            //process through each available data item
+            for(record of response.data.records){
+                //identity the flavor/store combination for each observation
+                const id = record.fields.item[0] + "|" + record.fields.store[0]
+                //Since the data is ordered by date, if we have already found an observation for a flavor/store combination, any additional obeservations are skipped.
+                if(!data[id]){
+                    data[id]={quantity:record.fields.quantity,date:record.fields.date}
+                }
+            }
+
+            // now fill the table with the most recent observations found for each flavor/store combination
+            for(const[key,value] of Object.entries(data)){
+                //create "boxes" for the store observations and totals of each flavor based on the identifiers already created for the individual cells (id's of the <td> tags)
+                const total_box = tag(key.split("|")[0] + "|total")
+                const box = tag(key)
+                //There will be more than one current observation for a flavor in each store, so we need to total these observations by store. To do this, if there is not currently a value in the table for flavor/store, it is added. If there is an observation, the new observation is added to the one that is currently there (running total logic).
+                if(box.innerHTML===""){
+                    box.innerHTML=value.quantity
+                }else{
+                    box.innerHTML=parseFloat(box.innerHTML)+value.quantity
+                }
+                //similar logic is used to build running totals for the grand total column.
+                if(total_box.innerHTML===""){
+                    total_box.innerHTML=value.quantity
+                }else{
+                    total_box.innerHTML=parseFloat(total_box.innerHTML)+value.quantity
+                }
+
+            }
+        }
+        
+    }else{
+        //This executes if the data needed to create the form or report is not retrieved successfully. It is essentially an error message to the user.
+        tag("inventory_panel").innerHTML="Unable to get inventory list: " + response.message + "."        
+    }
+
 }
 
 
